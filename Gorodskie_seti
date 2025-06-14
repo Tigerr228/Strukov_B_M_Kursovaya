@@ -1,0 +1,93 @@
+import heapq
+import random
+import time
+from collections import deque
+import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Классический Дейкстра (Min-Heap)
+def dijkstra_heap(graph, start):
+    distances = {v: float('inf') for v in graph}
+    distances[start] = 0
+    visited = set()
+    heap = [(0, start)]
+
+    while heap:
+        current_distance, current_vertex = heapq.heappop(heap)
+        if current_vertex in visited:
+            continue
+        visited.add(current_vertex)
+
+        for neighbor, weight in graph[current_vertex]:
+            if neighbor in visited:
+                continue
+            new_distance = current_distance + weight
+            if new_distance < distances[neighbor]:
+                distances[neighbor] = new_distance
+                heapq.heappush(heap, (new_distance, neighbor))
+    return distances
+
+# Модифицированный Дейкстра (Buckets)
+def dijkstra_with_buckets(graph, start, W, num_vertices):
+    max_distance = W * num_vertices
+    dist = [float('inf')] * num_vertices
+    dist[start] = 0
+    buckets = [deque() for _ in range(max_distance + 1)]
+    buckets[0].append(start)
+
+    for i in range(max_distance + 1):
+        while buckets[i]:
+            u = buckets[i].popleft()
+            if dist[u] < i:
+                continue
+            for v, weight in graph.get(u, []):
+                alt = dist[u] + weight
+                if alt < dist[v]:
+                    if dist[v] != float('inf'):
+                        buckets[dist[v]].remove(v)
+                    dist[v] = alt
+                    buckets[alt].append(v)
+    return dist
+
+# Создание псевдо-реального графа (решётка)
+def generate_realistic_city_graph(width, height, weight_range=(1, 10)):
+    G = nx.grid_2d_graph(width, height)
+    graph = {}
+    mapping = {}
+    count = 0
+    for node in G.nodes():
+        mapping[node] = count
+        count += 1
+
+    G = nx.relabel_nodes(G, mapping)
+
+    for node in G.nodes():
+        graph[node] = []
+        for neighbor in G.neighbors(node):
+            weight = random.randint(*weight_range)
+            graph[node].append((neighbor, weight))
+
+    return graph, 0, count  # граф, начальная вершина, количество вершин
+
+# Замер времени
+def timed_run(func, *args):
+    start = time.time()
+    func(*args)
+    return round((time.time() - start) * 1000, 2)  # в мс
+
+# --- Тест на псевдо-городском графе (50x50 = 2500 вершин) ---
+real_graph, start_node, num_vertices = generate_realistic_city_graph(50, 50)
+
+heap_time = timed_run(dijkstra_heap, {str(k): [(str(v), w) for v, w in lst] for k, lst in real_graph.items()}, str(start_node))
+bucket_time = timed_run(dijkstra_with_buckets, real_graph, start_node, 10, num_vertices)
+
+# --- Вывод результатов ---
+results_real = pd.DataFrame({
+    "Алгоритм": ["Min-Heap", "Buckets"],
+    "Время выполнения (мс)": [heap_time, bucket_time],
+    "Тип графа": ["Решётка 50x50"] * 2
+})
+
+print("Результаты на реалистичном графе (городская сеть):")
+print(results_real.to_string(index=False))
