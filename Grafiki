@@ -1,0 +1,164 @@
+import heapq
+import random
+import time
+import matplotlib.pyplot as plt
+from collections import deque
+import pandas as pd
+
+# Алгоритм Дейкстры с кучей
+def dijkstra_heap(graph, start):
+    distances = {v: float('inf') for v in graph}
+    distances[start] = 0
+    visited = set()
+    heap = [(0, start)]
+
+    while heap:
+        current_distance, current_vertex = heapq.heappop(heap)
+        if current_vertex in visited:
+            continue
+        visited.add(current_vertex)
+
+        for neighbor, weight in graph[current_vertex]:
+            if neighbor in visited:
+                continue
+            new_distance = current_distance + weight
+            if new_distance < distances[neighbor]:
+                distances[neighbor] = new_distance
+                heapq.heappush(heap, (new_distance, neighbor))
+    return distances
+
+# Алгоритм Дейкстры с черпаками
+def dijkstra_with_buckets(graph, start, W, num_vertices):
+    max_distance = W * num_vertices
+    dist = [float('inf')] * num_vertices
+    dist[start] = 0
+    buckets = [deque() for _ in range(max_distance + 1)]
+    buckets[0].append(start)
+
+    for i in range(max_distance + 1):
+        while buckets[i]:
+            u = buckets[i].popleft()
+            if dist[u] < i:
+                continue
+            for v, weight in graph.get(u, []):
+                alt = dist[u] + weight
+                if alt < dist[v]:
+                    if dist[v] != float('inf'):
+                        buckets[dist[v]].remove(v)
+                    dist[v] = alt
+                    buckets[alt].append(v)
+    return dist
+
+# Генерация графа
+def generate_graph(num_nodes, edges_per_node, weight_range, use_names=False):
+    graph = {}
+    for u in range(num_nodes):
+        key = chr(65 + u) if use_names else u
+        graph[key] = []
+        for _ in range(edges_per_node):
+            v = random.randint(0, num_nodes - 1)
+            if v != u:
+                target = chr(65 + v) if use_names else v
+                w = random.randint(*weight_range)
+                graph[key].append((target, w))
+    return graph
+
+# Для графиков 2 и 3
+def generate_graph_with_weights(num_nodes, edges_per_node, max_weight):
+    graph = {i: [] for i in range(num_nodes)}
+    for u in range(num_nodes):
+        for _ in range(edges_per_node):
+            v = random.randint(0, num_nodes - 1)
+            if v != u:
+                w = random.randint(1, max_weight)
+                graph[u].append((v, w))
+    return graph
+
+# Замер времени
+def measure_time(func, *args):
+    start_time = time.time()
+    func(*args)
+    return (time.time() - start_time) * 1000  # в мс
+
+# ----------- ЭКСПЕРИМЕНТЫ -----------
+
+# График 1: Время от количества вершин
+sizes = [10, 50, 100, 300, 500, 700, 1000, 3000, 5000, 10000, 20000]
+results_heap = []
+results_buckets = []
+
+for n in sizes:
+    G_heap = generate_graph(n, edges_per_node=5, weight_range=(1, 10), use_names=True)
+    G_buck = {i: [(random.randint(0, n - 1), random.randint(1, 10)) for _ in range(5)] for i in range(n)}
+    t_heap = measure_time(dijkstra_heap, G_heap, 'A')
+    t_buck = measure_time(dijkstra_with_buckets, G_buck, 0, 10, n)
+    results_heap.append(t_heap)
+    results_buckets.append(t_buck)
+
+# Вывод таблицы до графиков
+df = pd.DataFrame({
+    "Вершины": sizes,
+    "Время Heap (мс)": [round(t, 2) for t in results_heap],
+    "Время Buckets (мс)": [round(t, 2) for t in results_buckets],
+    "Память Heap (MB)": ["—"] * len(sizes),
+    "Память Buckets (MB)": ["—"] * len(sizes),
+})
+
+print("Сравнительная таблица производительности:\n")
+print(df.to_string(index=False))
+
+# Построение графика 1
+plt.figure(figsize=(10, 6))
+plt.plot(sizes, results_heap, label='Min-Heap')
+plt.plot(sizes, results_buckets, label='Buckets')
+plt.xlabel("Количество вершин")
+plt.ylabel("Время выполнения (мс)")
+plt.title("Время выполнения в зависимости от размера графа")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# График 2: Время от максимального веса
+weight_ranges = [10, 50, 100, 500, 1000]
+weight_times_heap = []
+weight_times_buckets = []
+
+for w in weight_ranges:
+    graph = generate_graph_with_weights(300, edges_per_node=5, max_weight=w)
+    t_heap = measure_time(dijkstra_heap, {str(k): [(str(v), wt) for v, wt in vlist] for k, vlist in graph.items()}, '0')
+    t_buckets = measure_time(dijkstra_with_buckets, graph, 0, w, 300)
+    weight_times_heap.append(t_heap)
+    weight_times_buckets.append(t_buckets)
+
+bar_width = 0.35
+x_indexes = range(len(weight_ranges))
+
+plt.figure(figsize=(10, 6))
+plt.bar([x - bar_width/2 for x in x_indexes], weight_times_heap, width=bar_width, label='Min-Heap')
+plt.bar([x + bar_width/2 for x in x_indexes], weight_times_buckets, width=bar_width, label='Buckets')
+plt.xticks(ticks=x_indexes, labels=weight_ranges)
+plt.xlabel("Максимальный вес ребра")
+plt.ylabel("Время выполнения (мс)")
+plt.title("Зависимость производительности от максимального веса рёбер")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# График 3: Память от плотности графа
+densities = [1, 3, 5, 7, 10]
+memory_buckets = []
+
+for d in densities:
+    graph = generate_graph_with_weights(300, edges_per_node=d, max_weight=10)
+    edge_count = sum(len(v) for v in graph.values())
+    approx_memory = edge_count * 0.0001  # 0.1 KB на ребро
+    memory_buckets.append(approx_memory)
+
+plt.figure(figsize=(10, 6))
+plt.plot(densities, memory_buckets, marker='o', label='Buckets')
+plt.xlabel("Количество рёбер на вершину")
+plt.ylabel("Память (MB)")
+plt.title("Потребление памяти при увеличении плотности графа")
+plt.grid(True)
+plt.legend()
+plt.show()
